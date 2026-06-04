@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "JD Order CSV Exporter",
+  "version": "0.1.0",
+  "description": "Export visible JD order list data to a local CSV file.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": ["activeTab", "downloads", "storage"],
+  "host_permissions": ["https://order.jd.com/*"],
+  "action": {
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    },
+    "default_popup": "popup.html",
+    "default_title": "导出京东订单"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://order.jd.com/center/list.action*"],
+      "js": [
+        "src/core/jdOrders.js",
+        "src/core/exportFlow.js",
+        "contentScript.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

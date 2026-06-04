@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>导出京东订单</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="panel">
+      <header class="header">
+        <div>
+          <h1>京东订单导出</h1>
+          <p id="pageStatus">检查当前页面中</p>
+        </div>
+      </header>
+
+      <div class="limitRow">
+        <label class="field compactField">
+          <span>页数上限</span>
+          <select id="maxPages">
+            <option value="10">10 页</option>
+            <option value="50">50 页</option>
+            <option value="100">100 页</option>
+            <option value="unlimited">不限制</option>
+          </select>
+        </label>
+        <div class="pageInfo">
+          <span>当前总页数</span>
+          <strong id="totalPagesText">识别中</strong>
+        </div>
+      </div>
+
+      <button id="exportButton" type="button">导出 CSV</button>
+
+      <section class="progress" aria-live="polite">
+        <div class="progressBar">
+          <div id="progressFill"></div>
+        </div>
+        <p id="progressText">等待开始</p>
+      </section>
+
+      <section id="resultPanel" class="result" hidden>
+        <p id="resultTitle" class="resultTitle"></p>
+        <p id="resultMeta" class="resultMeta"></p>
+        <div class="resultActions">
+          <button id="showFileButton" class="secondaryButton" type="button">显示文件</button>
+          <button id="openDownloadsButton" class="secondaryButton" type="button">打开下载文件夹</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="src/core/csv.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
