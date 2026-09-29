@@ -9,48 +9,86 @@
   <body>
     <main class="panel">
       <header class="header">
-        <div>
+        <div class="brand">
+          <span class="brandMark" aria-hidden="true"></span>
           <h1>京东订单导出</h1>
-          <p id="pageStatus">检查当前页面中</p>
         </div>
+        <span id="pageStatus" class="statusPill" aria-live="polite">检查中</span>
       </header>
 
-      <div class="limitRow">
-        <label class="field compactField">
-          <span>页数上限</span>
-          <select id="maxPages">
-            <option value="10">10 页</option>
-            <option value="50">50 页</option>
-            <option value="100">100 页</option>
-            <option value="unlimited">不限制</option>
-          </select>
-        </label>
-        <div class="pageInfo">
-          <span>当前总页数</span>
-          <strong id="totalPagesText">识别中</strong>
-        </div>
-      </div>
-
-      <button id="exportButton" type="button">导出 CSV</button>
-
-      <section class="progress" aria-live="polite">
-        <div class="progressBar">
-          <div id="progressFill"></div>
-        </div>
-        <p id="progressText">等待开始</p>
+      <section id="loadingView" class="loadingView" aria-live="polite">
+        <span class="loadingDot" aria-hidden="true"></span>
+        正在读取订单页…
       </section>
 
-      <section id="resultPanel" class="result" hidden>
-        <p id="resultTitle" class="resultTitle"></p>
-        <p id="resultMeta" class="resultMeta"></p>
-        <div class="resultActions">
-          <button id="showFileButton" class="secondaryButton" type="button">显示文件</button>
-          <button id="openDownloadsButton" class="secondaryButton" type="button">打开下载文件夹</button>
+      <section id="readyView" class="readyView" hidden>
+        <div class="scopeSummary">
+          <p class="eyebrow">当前筛选</p>
+          <div class="scopeMetric">
+            <strong id="totalPagesText">—</strong>
+            <span>页订单可导出</span>
+          </div>
+          <p class="helperText">保存为 CSV 文件，每件商品一行</p>
         </div>
+
+        <p id="rangeNotice" class="rangeNotice" hidden></p>
+        <button id="exportButton" class="primaryButton" type="button" disabled>导出订单</button>
+
+        <details id="rangeSettings" class="rangeSettings">
+          <summary>调整导出范围</summary>
+          <label class="field" for="maxPages">
+            <span>最多导出</span>
+            <select id="maxPages">
+              <option value="10">10 页</option>
+              <option value="50">50 页</option>
+              <option value="100">100 页</option>
+              <option value="unlimited">全部页数</option>
+            </select>
+          </label>
+        </details>
+      </section>
+
+      <section id="progressView" class="progressView" aria-live="polite" hidden>
+        <div class="progressHeading">
+          <div>
+            <p class="eyebrow">正在整理订单</p>
+            <strong id="progressFraction">0 / 0 页</strong>
+          </div>
+          <span class="progressGlyph" aria-hidden="true">↗</span>
+        </div>
+        <div class="progressBar" role="progressbar" aria-label="导出进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="progressFill"></div>
+        </div>
+        <p id="progressText" class="helperText">已读取 0 条商品记录</p>
+        <button id="cancelButton" class="quietButton" type="button">取消导出</button>
+      </section>
+
+      <section id="resultPanel" class="resultView" aria-live="polite" hidden>
+        <div class="resultHeading">
+          <span id="resultIcon" class="resultIcon" aria-hidden="true">✓</span>
+          <div>
+            <h2 id="resultTitle">已导出</h2>
+            <p id="resultMeta"></p>
+          </div>
+        </div>
+        <p id="resultFile" class="resultFile" hidden></p>
+        <div class="resultActions">
+          <button id="showFileButton" class="primaryButton" type="button" hidden>显示文件</button>
+          <button id="openDownloadsButton" class="quietButton" type="button" hidden>打开下载文件夹</button>
+          <button id="retryButton" class="primaryButton" type="button" hidden>重新检查</button>
+        </div>
+      </section>
+
+      <section id="wrongPageView" class="wrongPageView" hidden>
+        <div class="wrongPageIcon" aria-hidden="true">↗</div>
+        <h2>需要打开订单列表</h2>
+        <p>打开京东订单列表后，即可导出当前筛选的订单。</p>
+        <button id="openOrdersButton" class="primaryButton" type="button">打开订单列表</button>
       </section>
     </main>
 
     <script src="src/core/csv.js"></script>
+    <script src="src/core/exportFlow.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

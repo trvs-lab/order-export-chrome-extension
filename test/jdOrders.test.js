@@ -13,6 +13,63 @@ function documentFrom(html) {
 }
 
 describe("JD order list parsing", () => {
+  it("extracts products from the current order card layout", () => {
+    const document = documentFrom(`
+      <div class="orderCard-b731ca">
+        <div class="header-c3768c">
+          <div class="orderTime-4e55a3"><div class="metaValue-7993e4">2026-09-26 09:57:22</div></div>
+          <div class="orderMetas-4f212f"><div class="metaLabel-23db69">订单号</div><div class="metaValue-7993e4">1234567890123456</div></div>
+          <span class="shopNames-53c072">京东</span>
+          <span class="statusText-ca72c5">已完成</span>
+        </div>
+        <div class="orderBody-6b35e2">
+          <div class="productList-386ae9">
+            <div class="productItem-f5a70e"><div class="productInfo-634b25"><h3 class="productTitle-aa0842">商品一</h3><div class="productCount-123456">共 <span class="countNum-d453df">2</span> 件</div></div></div>
+            <div class="productItem-f5a70e"><div class="productInfo-634b25"><h3 class="productTitle-aa0842">商品二</h3><div class="productCount-123456">共 <span class="countNum-d453df">1</span> 件</div></div></div>
+          </div>
+          <div class="priceActionSection-68d47c">
+            <div class="priceRow-56eb40"><span class="priceSymbol-123456">¥</span><span class="priceInteger-123456">48</span><span class="priceDecimal-123456">.39</span></div>
+            <div class="jingDouReceived-60bf1c">5 京豆已到账</div>
+            <div class="paymentTypeName-4077b2">在线支付</div>
+            <div class="deliveryAndExpress-adfc02"><div class="deliveryInfo-121bce"><span class="custom-b5654b"><div class="deliveryTextGroup-c7ccbc"><span class="metaValue-1bbf6f"><span><span class="userName-943ad1">张三</span></span>浙江省杭州市</span></div></span></div></div>
+            <div class="action-a4cdb7"><div class="button-ee6181">立即购买</div><div class="button-ee6181">查看发票</div></div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    assert.deepEqual(parseJdOrdersFromDocument(document), [
+      {
+        orderedAt: "2026-09-26 09:57:22",
+        orderNumber: "1234567890123456",
+        shopName: "京东",
+        productName: "商品一",
+        quantity: "2",
+        recipient: "张三",
+        amount: "¥48.39",
+        paymentMethod: "在线支付",
+        status: "已完成",
+        rewardInfo: "5 京豆已到账",
+        actions: "立即购买；查看发票",
+        detailUrl: ""
+      },
+      {
+        orderedAt: "2026-09-26 09:57:22",
+        orderNumber: "1234567890123456",
+        shopName: "京东",
+        productName: "商品二",
+        quantity: "1",
+        recipient: "张三",
+        amount: "¥48.39",
+        paymentMethod: "在线支付",
+        status: "已完成",
+        rewardInfo: "5 京豆已到账",
+        actions: "立即购买；查看发票",
+        detailUrl: ""
+      }
+    ]);
+  });
+
   it("extracts one visible order item from the JD order list", () => {
     const document = documentFrom(`
       <table class="order-tb">

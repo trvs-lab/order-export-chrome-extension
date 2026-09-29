@@ -123,8 +123,55 @@
     };
   }
 
+  function parseOrderCards(document) {
+    const cards = Array.from(document.querySelectorAll('[class*="orderCard-"]'));
+
+    return cards.flatMap((card) => {
+      const products = Array.from(card.querySelectorAll('[class*="productItem-"]'));
+      if (products.length === 0) return [];
+
+      const orderNumber = textOf(card, '[class*="orderMetas-"] [class*="metaValue-"]').match(/\d+/)?.[0] || "";
+      const price = card.querySelector('[class*="priceRow-"]');
+      const amount = price
+        ? ["priceSymbol-", "priceInteger-", "priceDecimal-"]
+            .map((classPrefix) => textOf(price, `[class*="${classPrefix}"]`))
+            .join("")
+        : "";
+      const actions = Array.from(card.querySelectorAll('[class*="action-"] [class*="button-"]'))
+        .map((button) => normalizeText(button.textContent))
+        .filter(Boolean)
+        .join("；");
+      const detailUrl = firstHref(card, '[class*="detailLink-"] a[href]', document);
+      const orderMeta = {
+        orderedAt: textOf(card, '[class*="orderTime-"] [class*="metaValue-"]'),
+        orderNumber,
+        shopName: textOf(card, '[class*="shopNames-"]') || "京东"
+      };
+      const rowMeta = {
+        recipient: textOf(card, '[class*="deliveryInfo-"] [class*="userName-"]'),
+        amount,
+        paymentMethod: textOf(card, '[class*="paymentTypeName-"]'),
+        status: textOf(card, '[class*="statusText-"]'),
+        rewardInfo: textOf(card, '[class*="jingDouReceived-"]'),
+        actions,
+        detailUrl
+      };
+
+      return products.map((product) => ({
+        ...orderMeta,
+        productName: textOf(product, '[class*="productTitle-"]'),
+        quantity: textOf(product, '[class*="countNum-"]'),
+        ...rowMeta
+      }));
+    });
+  }
+
   function parseJdOrdersFromDocument(document) {
     const orderGroups = Array.from(document.querySelectorAll(".order-tb tbody, tbody[id^='tb-']"));
+
+    if (orderGroups.length === 0) {
+      return parseOrderCards(document);
+    }
 
     return orderGroups.flatMap((orderGroup) => {
       const header = orderGroup.querySelector(".tr-th");

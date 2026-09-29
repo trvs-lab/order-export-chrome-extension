@@ -1,45 +1,37 @@
 (function attachExportFlowCore(root, factory) {
-  const dependencies = root.JdOrderExporterCore || {};
-  const api = factory(dependencies);
+  const api = factory();
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = factory(require("./jdOrders"));
+    module.exports = api;
   }
 
   root.JdOrderExporterCore = Object.assign(root.JdOrderExporterCore || {}, api);
-})(typeof globalThis !== "undefined" ? globalThis : this, function exportFlowFactory({
-  buildJdOrderPageUrl,
-  parseJdOrdersFromDocument
-}) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function exportFlowFactory() {
   function numericMaxPages(maxPages) {
     return maxPages === "unlimited" ? Number.POSITIVE_INFINITY : Number(maxPages || 50);
   }
 
-  function currentDocumentMatchesPage(currentUrl, pageNumber) {
-    const url = new URL(currentUrl);
-    return Number(url.searchParams.get("page") || "1") === pageNumber;
-  }
-
   async function collectJdOrders({
-    currentDocument,
-    currentUrl,
-    fetchPageDocument,
+    totalPages,
     maxPages = 50,
+    readPage,
     onProgress = () => {},
     wait = async () => {}
   }) {
     const rows = [];
-    const limit = numericMaxPages(maxPages);
+    const limit = Math.min(Number(totalPages) || 1, numericMaxPages(maxPages));
 
     for (let page = 1; page <= limit; page += 1) {
-      const pageUrl = buildJdOrderPageUrl(currentUrl, page);
-      let pageDocument;
+      let pageRows;
 
       try {
-        pageDocument =
-          page === 1 && currentDocumentMatchesPage(currentUrl, page)
-            ? currentDocument
-            : await fetchPageDocument(pageUrl);
+        pageRows = await readPage(page);
+        if (!Array.isArray(pageRows) || pageRows.length === 0) {
+          if (page === 1) {
+            return { ok: true, rows, pagesScanned: 0, stoppedReason: "empty-page" };
+          }
+          throw new Error(`第 ${page} 页没有读取到订单`);
+        }
       } catch (error) {
         return {
           ok: false,
@@ -47,17 +39,6 @@
           pagesScanned: page - 1,
           failedPage: page,
           error: error?.message || String(error)
-        };
-      }
-
-      const pageRows = parseJdOrdersFromDocument(pageDocument);
-
-      if (pageRows.length === 0) {
-        return {
-          ok: true,
-          rows,
-          pagesScanned: page - 1,
-          stoppedReason: "empty-page"
         };
       }
 
@@ -72,8 +53,8 @@
     return {
       ok: true,
       rows,
-      pagesScanned: Number.isFinite(limit) ? limit : rows.length,
-      stoppedReason: "max-pages"
+      pagesScanned: limit,
+      stoppedReason: limit < Number(totalPages) ? "max-pages" : "last-page"
     };
   }
 

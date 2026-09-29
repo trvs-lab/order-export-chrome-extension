@@ -1,64 +1,114 @@
 (function attachPopup() {
-  const MESSAGE_EXPORT = "JD_EXPORT_ORDERS";
   const MESSAGE_PAGE_INFO = "JD_GET_PAGE_INFO";
-  const MESSAGE_PROGRESS = "JD_EXPORT_PROGRESS";
+  const MESSAGE_PAGE_ROWS = "JD_GET_PAGE_ROWS";
+  const ORDER_LIST_URL = "https://order.jd.com/center/list.action";
 
   const pageStatus = document.getElementById("pageStatus");
+  const loadingView = document.getElementById("loadingView");
+  const readyView = document.getElementById("readyView");
+  const progressView = document.getElementById("progressView");
+  const resultPanel = document.getElementById("resultPanel");
+  const wrongPageView = document.getElementById("wrongPageView");
   const maxPages = document.getElementById("maxPages");
+  const rangeNotice = document.getElementById("rangeNotice");
   const exportButton = document.getElementById("exportButton");
   const totalPagesText = document.getElementById("totalPagesText");
+  const progressFraction = document.getElementById("progressFraction");
+  const progressBar = document.querySelector(".progressBar");
   const progressFill = document.getElementById("progressFill");
   const progressText = document.getElementById("progressText");
-  const resultPanel = document.getElementById("resultPanel");
+  const cancelButton = document.getElementById("cancelButton");
+  const resultIcon = document.getElementById("resultIcon");
   const resultTitle = document.getElementById("resultTitle");
   const resultMeta = document.getElementById("resultMeta");
+  const resultFile = document.getElementById("resultFile");
   const showFileButton = document.getElementById("showFileButton");
   const openDownloadsButton = document.getElementById("openDownloadsButton");
+  const retryButton = document.getElementById("retryButton");
+  const openOrdersButton = document.getElementById("openOrdersButton");
 
   let activeTab = null;
+  let currentPageInfo = null;
   let isBusy = false;
+  let cancelRequested = false;
+  let cancelWait = null;
   let lastDownloadId = null;
-
-  function setBusy(nextBusy) {
-    isBusy = nextBusy;
-    exportButton.disabled = nextBusy || !isJdOrderPage(activeTab?.url || "");
-    maxPages.disabled = nextBusy;
-  }
+  let progressPageLimit = 1;
 
   function isJdOrderPage(url) {
     return /^https:\/\/order\.jd\.com\/center\/list\.action/.test(url || "");
   }
 
+  function setView(view) {
+    loadingView.hidden = view !== "loading";
+    readyView.hidden = view !== "ready";
+    progressView.hidden = view !== "progress";
+    resultPanel.hidden = !view.startsWith("result-");
+    wrongPageView.hidden = view !== "wrong-page";
+
+    pageStatus.dataset.state = view;
+    pageStatus.textContent = ({
+      loading: "检查中",
+      ready: "已连接",
+      progress: "导出中",
+      "result-success": "已完成",
+      "result-warning": "部分完成",
+      "result-error": "需处理",
+      "result-neutral": "已停止",
+      "wrong-page": "未连接"
+    })[view];
+  }
+
+  function setBusy(nextBusy) {
+    isBusy = nextBusy;
+    exportButton.disabled = nextBusy || !currentPageInfo;
+    maxPages.disabled = nextBusy;
+  }
+
+  function selectedPageLimit() {
+    const total = Math.max(1, Number(currentPageInfo?.totalPages) || 1);
+    const cap = maxPages.value === "unlimited" ? total : Number(maxPages.value) || 50;
+    return Math.min(total, cap);
+  }
+
+  function updateScope() {
+    if (!currentPageInfo) return;
+    const total = Math.max(1, Number(currentPageInfo.totalPages) || 1);
+    const selected = selectedPageLimit();
+    totalPagesText.textContent = String(total);
+    exportButton.textContent = `导出这 ${selected} 页`;
+    rangeNotice.hidden = selected >= total;
+    rangeNotice.textContent = selected < total
+      ? `共 ${total} 页，本次最多导出 ${selected} 页`
+      : "";
+  }
+
+  function pageNumber(page) {
+    return String(page).padStart(2, "0");
+  }
+
   function setProgress(page, rowCount) {
-    const selectedMaxPages = maxPages.value === "unlimited" ? 100 : Number(maxPages.value);
-    const progress = page > 0 ? Math.min(100, Math.round((page / selectedMaxPages) * 100)) : 0;
-    progressFill.style.width = `${progress}%`;
-    progressText.textContent = page > 0 ? `已扫描第 ${page} 页，已读取 ${rowCount} 行` : "准备导出";
+    const percent = Math.min(100, Math.round((page / progressPageLimit) * 100));
+    progressFraction.textContent = `${pageNumber(page)} / ${pageNumber(progressPageLimit)} 页`;
+    progressFill.style.width = `${percent}%`;
+    progressBar.setAttribute("aria-valuenow", String(percent));
+    progressText.textContent = `已读取 ${rowCount} 条商品记录`;
   }
 
-  function setPageInfo(pageInfo) {
-    if (pageInfo?.totalPages) {
-      totalPagesText.textContent = `共 ${pageInfo.totalPages} 页`;
-      return;
-    }
-
-    totalPagesText.textContent = "未识别";
-  }
-
-  function clearResult() {
-    lastDownloadId = null;
-    resultPanel.hidden = true;
-    resultTitle.textContent = "";
-    resultMeta.textContent = "";
-    showFileButton.disabled = true;
-  }
-
-  function showResult({ title, meta, downloadId }) {
-    lastDownloadId = downloadId || null;
+  function showResult({ tone, title, meta, fileName = "", downloadId = null }) {
+    lastDownloadId = downloadId;
+    resultPanel.dataset.tone = tone;
+    resultIcon.textContent = ({ success: "✓", warning: "!", error: "!", neutral: "—" })[tone];
     resultTitle.textContent = title;
     resultMeta.textContent = meta;
-    showFileButton.disabled = !lastDownloadId;
-    resultPanel.hidden = false;
+    resultFile.textContent = fileName;
+    resultFile.hidden = !fileName;
+    showFileButton.hidden = downloadId === null;
+    openDownloadsButton.hidden = downloadId === null || tone === "warning";
+    retryButton.hidden = downloadId !== null && tone !== "warning";
+    retryButton.className = downloadId !== null ? "quietButton" : "primaryButton";
+    retryButton.textContent = downloadId !== null ? "重新导出" : "重新检查";
+    setView(`result-${tone}`);
   }
 
   function downloadCsv(csv, fileName) {
@@ -89,63 +139,176 @@
   }
 
   async function queryActiveTab() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    activeTab = tab;
+    setView("loading");
+    currentPageInfo = null;
+    setBusy(false);
 
-    if (isJdOrderPage(tab?.url || "")) {
-      pageStatus.textContent = "已识别京东订单列表页";
-      exportButton.disabled = false;
-      try {
-        setPageInfo(await chrome.tabs.sendMessage(tab.id, { type: MESSAGE_PAGE_INFO }));
-      } catch (_) {
-        totalPagesText.textContent = "刷新后识别";
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      activeTab = tab;
+
+      if (!isJdOrderPage(tab?.url)) {
+        setView("wrong-page");
+        return;
       }
-    } else {
-      pageStatus.textContent = "请在京东订单列表页使用";
-      exportButton.disabled = true;
-      totalPagesText.textContent = "-";
+
+      currentPageInfo = await chrome.tabs.sendMessage(tab.id, { type: MESSAGE_PAGE_INFO });
+      if (!currentPageInfo || !Number(currentPageInfo.totalPages)) {
+        throw new Error("未识别到订单页数，请刷新京东订单列表页后重试");
+      }
+
+      updateScope();
+      setBusy(false);
+      setView("ready");
+    } catch (error) {
+      const message = error?.message || String(error);
+      showResult({
+        tone: "error",
+        title: "无法读取订单页",
+        meta: /Receiving end does not exist|Could not establish connection/.test(message)
+          ? "请刷新京东订单列表页后重试"
+          : message
+      });
     }
   }
 
   async function loadSettings() {
-    const settings = await chrome.storage.local.get({ maxPages: "50" });
-    maxPages.value = settings.maxPages;
+    try {
+      const settings = await chrome.storage.local.get({ maxPages: "50" });
+      maxPages.value = settings.maxPages;
+    } catch (_) {
+      maxPages.value = "50";
+    }
+    if (!maxPages.value) maxPages.value = "50";
   }
 
   async function saveSettings() {
+    updateScope();
     await chrome.storage.local.set({ maxPages: maxPages.value });
   }
 
-  function sendExportMessage() {
-    return chrome.tabs.sendMessage(activeTab.id, {
-      type: MESSAGE_EXPORT,
-      maxPages: maxPages.value === "unlimited" ? "unlimited" : Number(maxPages.value)
+  function buildPageUrl(page) {
+    const url = new URL(activeTab.url);
+    url.searchParams.set("page", String(page));
+    return url.href;
+  }
+
+  function filterLabel() {
+    return new URL(activeTab.url).searchParams.get("d") === "1"
+      ? "recent-3-months"
+      : "current-filter";
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function waitBeforeNextPage(ms) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        cancelWait = null;
+        resolve();
+      }, ms);
+      cancelWait = () => {
+        clearTimeout(timer);
+        cancelWait = null;
+        resolve();
+      };
     });
   }
 
-  async function exportOrders() {
-    if (isBusy || !activeTab) return;
+  function stopIfCancelled() {
+    if (cancelRequested) throw new Error("导出已取消");
+  }
 
-    if (maxPages.value === "unlimited") {
-      const confirmed = window.confirm("不限制页数可能运行很久。确认继续导出吗？");
-      if (!confirmed) return;
+  async function readRenderedPage(tabId, page) {
+    const deadline = Date.now() + 15000;
+
+    while (Date.now() < deadline) {
+      stopIfCancelled();
+      try {
+        const response = await chrome.tabs.sendMessage(tabId, { type: MESSAGE_PAGE_ROWS });
+        stopIfCancelled();
+        if (response?.currentPage === page && response.rows?.length > 0) {
+          return response.rows;
+        }
+      } catch (error) {
+        if (cancelRequested) throw error;
+        // The content script is unavailable until the new page finishes loading.
+      }
+
+      await wait(300);
     }
 
-    setBusy(true);
-    clearResult();
+    throw new Error(`第 ${page} 页加载超时，未读取到订单`);
+  }
+
+  async function collectOrders() {
+    const pageInfo = await chrome.tabs.sendMessage(activeTab.id, { type: MESSAGE_PAGE_INFO });
+    stopIfCancelled();
+    currentPageInfo = pageInfo;
+    updateScope();
+    progressPageLimit = selectedPageLimit();
     setProgress(0, 0);
+    let workerTabId = null;
 
     try {
-      const result = await sendExportMessage();
-      const rows = result?.rows || [];
+      const result = await window.JdOrderExporterCore.collectJdOrders({
+        totalPages: pageInfo.totalPages,
+        maxPages: maxPages.value,
+        readPage: async (page) => {
+          stopIfCancelled();
+          if (page === pageInfo.currentPage) {
+            return readRenderedPage(activeTab.id, page);
+          }
 
+          const url = buildPageUrl(page);
+          if (workerTabId === null) {
+            const workerTab = await chrome.tabs.create({ url, active: false });
+            workerTabId = workerTab.id;
+          } else {
+            await chrome.tabs.update(workerTabId, { url });
+          }
+
+          stopIfCancelled();
+          return readRenderedPage(workerTabId, page);
+        },
+        onProgress: ({ page, rowCount }) => setProgress(page, rowCount),
+        wait: () => waitBeforeNextPage(800 + Math.floor(Math.random() * 701))
+      });
+
+      return { ...result, filterLabel: filterLabel() };
+    } finally {
+      if (workerTabId !== null) {
+        await chrome.tabs.remove(workerTabId).catch(() => {});
+      }
+    }
+  }
+
+  async function exportOrders() {
+    if (isBusy || !activeTab || !currentPageInfo) return;
+
+    cancelRequested = false;
+    cancelButton.disabled = false;
+    cancelButton.textContent = "取消导出";
+    progressPageLimit = selectedPageLimit();
+    setBusy(true);
+    setProgress(0, 0);
+    setView("progress");
+
+    try {
+      const result = await collectOrders();
+      if (cancelRequested) {
+        showResult({ tone: "neutral", title: "导出已取消", meta: "未保存文件" });
+        return;
+      }
+
+      const rows = result?.rows || [];
       if (rows.length === 0) {
-        progressFill.style.width = "0%";
-        progressText.textContent = result?.error || "没有读取到可见订单";
         showResult({
+          tone: "error",
           title: "没有导出文件",
-          meta: progressText.textContent,
-          downloadId: null
+          meta: result?.error || "当前筛选下没有读取到商品记录"
         });
         return;
       }
@@ -156,47 +319,51 @@
         now: new Date()
       });
 
+      cancelButton.disabled = true;
+      cancelButton.textContent = "正在保存文件…";
       const downloadId = await downloadCsv(csv, fileName);
-
-      progressFill.style.width = "100%";
-      progressText.textContent = result.ok
-        ? `完成：导出 ${rows.length} 行，扫描 ${result.pagesScanned} 页`
-        : `第 ${result.failedPage} 页失败，已导出 ${rows.length} 行`;
       showResult({
-        title: result.ok ? "CSV 已导出" : "已导出部分订单",
-        meta: `${fileName}，共 ${rows.length} 行，保存到浏览器默认下载目录`,
+        tone: result.ok ? "success" : "warning",
+        title: result.ok ? "订单已导出" : "已导出部分订单",
+        meta: result.ok
+          ? `${rows.length} 条商品记录 · 扫描 ${result.pagesScanned} 页`
+          : `${rows.length} 条商品记录 · 第 ${result.failedPage} 页读取失败：${result.error}`,
+        fileName,
         downloadId
       });
     } catch (error) {
-      progressFill.style.width = "0%";
-      const message = error?.message || String(error);
-      progressText.textContent = /Receiving end does not exist|Could not establish connection/.test(message)
-        ? "请刷新京东订单列表页后重试"
-        : message;
-      showResult({
-        title: "导出失败",
-        meta: progressText.textContent,
-        downloadId: null
-      });
+      if (cancelRequested) {
+        showResult({ tone: "neutral", title: "导出已取消", meta: "未保存文件" });
+      } else {
+        const message = error?.message || String(error);
+        showResult({
+          tone: "error",
+          title: "导出失败",
+          meta: /Receiving end does not exist|Could not establish connection/.test(message)
+            ? "请刷新京东订单列表页后重试"
+            : message
+        });
+      }
     } finally {
       setBusy(false);
     }
   }
 
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type === MESSAGE_PROGRESS) {
-      setProgress(message.page, message.rowCount);
-    }
-  });
-
   maxPages.addEventListener("change", saveSettings);
   exportButton.addEventListener("click", exportOrders);
+  cancelButton.addEventListener("click", () => {
+    if (!isBusy || cancelButton.disabled) return;
+    cancelRequested = true;
+    cancelButton.disabled = true;
+    cancelButton.textContent = "正在停止…";
+    if (cancelWait) cancelWait();
+  });
   showFileButton.addEventListener("click", () => {
-    if (lastDownloadId) {
-      chrome.downloads.show(lastDownloadId);
-    }
+    if (lastDownloadId !== null) chrome.downloads.show(lastDownloadId);
   });
   openDownloadsButton.addEventListener("click", () => chrome.downloads.showDefaultFolder());
+  retryButton.addEventListener("click", queryActiveTab);
+  openOrdersButton.addEventListener("click", () => chrome.tabs.create({ url: ORDER_LIST_URL }));
 
-  Promise.all([loadSettings(), queryActiveTab()]).then(() => setBusy(false));
+  loadSettings().then(queryActiveTab);
 })();
